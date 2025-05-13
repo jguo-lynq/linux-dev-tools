@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set -euo pipefail
+
+echo "Connected BoBs:"
+echo "--------------------------------"
+
+# Grab all symlinks that start with rtHST or rtDBG
+# If none found, we handle that gracefully below.
+all_symlinks=( /dev/rtHST* /dev/rtDBG* )
+
+# If glob finds no matches, it literally stores "/dev/rtHST*" etc.
+# We'll filter out those unexpanded patterns in the loop.
+declare -A have  # will store "idx:HST0" => "yes", "idx:DBG1" => "yes"
+
+for link in "${all_symlinks[@]}"; do
+  # Skip if it didn't expand (i.e. file doesn't actually exist)
+  [[ -e "$link" ]] || continue
+
+  # Also skip if the symlink points nowhere
+  real_target=$(readlink -f "$link")
+  [[ -e "$real_target" ]] || continue
+
+  # Filename is something like "rtHST2-0" or "rtDBG1-1"
+  base=$(basename "$link")
+
+  # Use Bash extended regex to parse:
+  #   ^rt(HST|DBG)([0-9]+)-([0-9])$
+  #   1) group1 => "HST" or "DBG"
+  #   2) group2 => BoB index (one or more digits)
+  #   3) group3 => port suffix (0 or 1)
+  if [[ "$base" =~ ^rt(HST|DBG)([0-9]+)-([0-9])$ ]]; then
+    prefix="${BASH_REMATCH[1]}"  # "HST" or "DBG"
+    idx="${BASH_REMATCH[2]}"     # e.g. "0", "1", "2"
+    port="${BASH_REMATCH[3]}"    # "0" or "1"
+
+    # We'll store it in an assoc array, e.g. "1:HST0" => "yes"
+    have["$idx:$prefix$port"]="yes"
+  fi
+done
+
+# Gather all unique indices we found
+declare -A idx_map=()
+for key in "${!have[@]}"; do
+  # key looks like "1:HST0" or "2:DBG1"
+  boBnum="${key%%:*}"  # everything before the colon
+  idx_map["$boBnum"]="1"
+done
+
+# If no BoBs found, print message
+if [[ ${#idx_map[@]} -eq 0 ]]; then
+  echo "(none found)"
+  exit 0
+fi
+
+# Sort numeric and print
+for num in $(printf '%s\n' "${!idx_map[@]}" | sort -n); do
+  # We'll see what we have for each idx
+  status="BoB $num:"
+
+  # If we have both HST0 and HST1, we say [HST]
+  if [[ ${have["$num:HST0"]+x} && ${have["$num:HST1"]+x} ]]; then
+    status+=" [HST]"
+  fi
+
+  # If we have both DBG0 and DBG1, we say [DBG]
+  if [[ ${have["$num:DBG0"]+x} && ${have["$num:DBG1"]+x} ]]; then
+    status+=" [DBG]"
+  fi
+
+  echo "$status"
+done
+
+echo "--------------------------------"
+
