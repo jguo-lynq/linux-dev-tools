@@ -1,12 +1,14 @@
 #!/bin/bash
 
 use_unkindness=false
+use_debug=false
 
 # Parse options
-while getopts ":u" opt; do
+while getopts ":ud" opt; do
   case $opt in
     u) use_unkindness=true ;;
-    \?) echo "Usage: $0 [-u] device_indices..."; exit 1 ;;
+    d) use_debug=true ;;
+    \?) echo "Usage: $0 [-u] [-d] device_indices..."; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -40,13 +42,23 @@ if $use_unkindness; then
 fi
 
 #attach to configure app for each device
-for ((i=0; i<num_devices; i++)); do
-
-    tmux split-window -c "#{pane_current_path}" \
-    "exec bash --rcfile <(echo 'source ~/.bashrc; history -s \"cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtDBG${device_indices[$i]}-0\"; cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtDBG${device_indices[$i]}-0')"
-
-    tmux select-pane -R
-done
+if $use_debug; then
+    for ((i=0; i<num_devices; i++)); do
+    
+        tmux split-window -c "#{pane_current_path}" \
+        "exec bash --rcfile <(echo 'source ~/.bashrc; history -s \"cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtDBG${device_indices[$i]}-0\"; cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtDBG${device_indices[$i]}-0')"
+    
+        tmux select-pane -R
+    done
+else
+    for ((i=0; i<num_devices; i++)); do
+    
+        tmux split-window -c "#{pane_current_path}" \
+        "exec bash --rcfile <(echo 'source ~/.bashrc; history -s \"cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtHST${device_indices[$i]}-0\"; cd $HOME/dev/raven-sdk && ./bin/configure.debug /dev/rtHST${device_indices[$i]}-0')"
+    
+        tmux select-pane -R
+    done
+fi
 
 win_num=$(tmux display-message -p '#I')
 echo "Current window: $win_num"
