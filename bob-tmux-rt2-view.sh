@@ -48,6 +48,7 @@ for ((i=0; i<num_devices; i++)); do
     tmux select-pane -R
 done
 
+win_num=$(tmux display-message -p '#I')
+echo "Current window: $win_num"
 
-
-
+~/bin/scripts/tmux-move-to-front.sh $win_num
