@@ -13,34 +13,42 @@ device_idx=$1
 mode=${2:-""}
 
 # Sanity check for available devices
-usb_count=$(ls /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* 2>/dev/null | wc -l)
+#usb_count=$(ls /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* 2>/dev/null | wc -l)
 uart_count=$(ls /dev/serial/by-id/usb-Silicon_Labs_CP2105_Dual_USB_to_UART_Bridge_Controller_*if00* 2>/dev/null | wc -l)
 
-if [[ ${usb_count} != "1" || ${uart_count} != "1" ]]; then
+#if [[ ${usb_count} != "1" || ${uart_count} != "1" ]]; then
+if [[ ${uart_count} != "1" ]]; then
     echo "Please ensure only ONE radio is plugged in and turned on."
-    echo "Found: ${usb_count} Zephyr + ${uart_count} CP2105 devices."
+    #echo "Found: ${usb_count} Zephyr + ${uart_count} CP2105 devices."
     exit 1
 fi
 
 # Resolve ID_USB_SERIAL and ID_USB_INTERFACE_NUM — abort if any fail
-host0_serial=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* | grep "ID_USB_SERIAL=" | cut -d= -f2)
-host0_iface=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
-host1_serial=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if03* | grep "ID_USB_SERIAL=" | cut -d= -f2)
-host1_iface=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if03* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
+#host0_serial=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* | grep "ID_USB_SERIAL=" | cut -d= -f2)
+#host0_iface=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if00* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
+#host1_serial=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if03* | grep "ID_USB_SERIAL=" | cut -d= -f2)
+#host1_iface=$(udevadm info /dev/serial/by-id/usb-ZEPHYR_LNQ3195_*if03* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
 debug0_serial=$(udevadm info /dev/serial/by-id/usb-Silicon_Labs_CP2105_Dual_USB_to_UART_Bridge_Controller_*if00* | grep "ID_USB_SERIAL=" | cut -d= -f2)
 debug0_iface=$(udevadm info /dev/serial/by-id/usb-Silicon_Labs_CP2105_Dual_USB_to_UART_Bridge_Controller_*if00* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
 debug1_serial=$(udevadm info /dev/serial/by-id/usb-Silicon_Labs_CP2105_Dual_USB_to_UART_Bridge_Controller_*if01* | grep "ID_USB_SERIAL=" | cut -d= -f2)
 debug1_iface=$(udevadm info /dev/serial/by-id/usb-Silicon_Labs_CP2105_Dual_USB_to_UART_Bridge_Controller_*if01* | grep "ID_USB_INTERFACE_NUM=" | cut -d= -f2)
 
-if [[ -z "$host0_serial" || -z "$host0_iface" || -z "$host1_serial" || -z "$host1_iface" || -z "$debug0_serial" || -z "$debug0_iface" || -z "$debug1_serial" || -z "$debug1_iface" ]]; then
+#if [[ -z "$host0_serial" || -z "$host0_iface" || -z "$host1_serial" || -z "$host1_iface" || -z "$debug0_serial" || -z "$debug0_iface" || -z "$debug1_serial" || -z "$debug1_iface" ]]; then
+if [[  -z "$debug0_serial" || -z "$debug0_iface" || -z "$debug1_serial" || -z "$debug1_iface" ]]; then
     echo "Error: Failed to resolve one or more ID_USB_SERIAL or ID_USB_INTERFACE_NUM values."
     exit 1
 fi
 
 # Prepare the new rule block
+#rule_lines=$(cat <<EOF
+#SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${host0_serial}", ENV{ID_USB_INTERFACE_NUM}=="${host0_iface}", SYMLINK+="rtHST${device_idx}-sdk"
+#SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${host1_serial}", ENV{ID_USB_INTERFACE_NUM}=="${host1_iface}", SYMLINK+="rtHST${device_idx}-log"
+#SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${debug0_serial}", ENV{ID_USB_INTERFACE_NUM}=="${debug0_iface}", SYMLINK+="rtDBG${device_idx}-sdk"
+#SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${debug1_serial}", ENV{ID_USB_INTERFACE_NUM}=="${debug1_iface}", SYMLINK+="rtDBG${device_idx}-log"
+#EOF
+#)
+
 rule_lines=$(cat <<EOF
-SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${host0_serial}", ENV{ID_USB_INTERFACE_NUM}=="${host0_iface}", SYMLINK+="rtHST${device_idx}-sdk"
-SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${host1_serial}", ENV{ID_USB_INTERFACE_NUM}=="${host1_iface}", SYMLINK+="rtHST${device_idx}-log"
 SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${debug0_serial}", ENV{ID_USB_INTERFACE_NUM}=="${debug0_iface}", SYMLINK+="rtDBG${device_idx}-sdk"
 SUBSYSTEM=="tty", ENV{ID_USB_SERIAL}=="${debug1_serial}", ENV{ID_USB_INTERFACE_NUM}=="${debug1_iface}", SYMLINK+="rtDBG${device_idx}-log"
 EOF
@@ -83,4 +91,5 @@ sudo udevadm trigger
 
 echo "Resulting symlinks:"
 ls -l /dev/rtDBG${device_idx}-* /dev/rtHST${device_idx}-* 2>/dev/null || echo "(Not visible yet — try replugging device)"
+
 
