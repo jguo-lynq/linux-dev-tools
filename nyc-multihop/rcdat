@@ -1,0 +1,212 @@
+#!/opt/rcdat-venv/bin/python
+
+import sys
+import time
+import hid
+
+VID = 0x20CE
+PID = 0x0023
+
+# Logical unit number -> Mini-Circuits INTERNAL serial number
+UNITS = {
+    1: {
+        "serial": "12111090192",
+        "model": "RCDAT-4000-120",
+        "max_db": 120.0,
+    },
+    2: {
+        "serial": "11811150050",
+        "model": "RCDAT-6000-110",
+        "max_db": 110.0,
+    },
+}
+
+CMD_GET_ATTENUATION = 18
+CMD_SET_ATTENUATION = 19
+CMD_GET_PART_NUMBER = 40
+CMD_GET_SERIAL = 41
+
+
+def command(dev, code, data=None, timeout=2.0):
+    packet = [0] * 64
+    packet[0] = code
+
+    if data:
+        for i, value in enumerate(data, start=1):
+            packet[i] = value
+
+    dev.write(packet)
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        response = dev.read(64)
+
+        if response and response[0] == code:
+            return response
+
+        time.sleep(0.01)
+
+    raise TimeoutError(f"No response to command {code}")
+
+
+def response_string(response):
+    return (
+        bytes(response[1:])
+        .split(b"\x00", 1)[0]
+        .decode("ascii", errors="replace")
+    )
+
+
+def find_unit(unit_number):
+    if unit_number not in UNITS:
+        raise ValueError("Unit must be 1 or 2")
+
+    wanted_serial = UNITS[unit_number]["serial"]
+
+    for info in hid.enumerate(VID, PID):
+        dev = hid.device()
+
+        try:
+            dev.open_path(info["path"])
+            dev.set_nonblocking(1)
+
+            serial = response_string(command(dev, CMD_GET_SERIAL))
+
+            if serial == wanted_serial:
+                return dev
+
+        except Exception:
+            pass
+
+        try:
+            dev.close()
+        except Exception:
+            pass
+
+    raise RuntimeError(
+        f"Could not find RCDAT {unit_number} "
+        f"(serial {wanted_serial})"
+    )
+
+
+def get_attenuation(dev):
+    response = command(dev, CMD_GET_ATTENUATION)
+    return response[1] + response[2] / 4.0
+
+
+def set_attenuation(dev, db):
+    steps = round(db * 4)
+
+    if abs(db * 4 - steps) > 1e-6:
+        raise ValueError("Attenuation must be in 0.25 dB steps")
+
+    whole_db = steps // 4
+    quarter_steps = steps % 4
+
+    command(
+        dev,
+        CMD_SET_ATTENUATION,
+        [whole_db, quarter_steps]
+    )
+
+
+def show_unit(unit):
+    dev = find_unit(unit)
+
+    try:
+        model = response_string(command(dev, CMD_GET_PART_NUMBER))
+        attenuation = get_attenuation(dev)
+
+        print(
+            f"{unit}: {model} "
+            f"S/N {UNITS[unit]['serial']} "
+            f"= {attenuation:.2f} dB"
+        )
+
+    finally:
+        dev.close()
+
+
+def usage():
+    print(
+        "Usage:\n"
+        "  rcdat get\n"
+        "  rcdat get <unit>\n"
+        "  rcdat set <unit> <dB>\n\n"
+        "Examples:\n"
+        "  rcdat get\n"
+        "  rcdat get 1\n"
+        "  rcdat set 1 20\n"
+        "  rcdat set 2 35.25"
+    )
+
+
+def main():
+    if len(sys.argv) < 2:
+        usage()
+        return 1
+
+    action = sys.argv[1].lower()
+
+    if action == "get":
+
+        if len(sys.argv) == 2:
+            show_unit(1)
+            show_unit(2)
+            return 0
+
+        unit = int(sys.argv[2])
+        show_unit(unit)
+        return 0
+
+    if action == "set":
+
+        if len(sys.argv) != 4:
+            usage()
+            return 1
+
+        unit = int(sys.argv[2])
+        db = float(sys.argv[3])
+
+        if unit not in UNITS:
+            raise ValueError("Unit must be 1 or 2")
+
+        if db < 0 or db > UNITS[unit]["max_db"]:
+            raise ValueError(
+                f"Unit {unit} range is 0-{UNITS[unit]['max_db']} dB"
+            )
+
+        dev = find_unit(unit)
+
+        try:
+            before = get_attenuation(dev)
+
+            set_attenuation(dev, db)
+
+            time.sleep(0.05)
+
+            after = get_attenuation(dev)
+
+            print(
+                f"RCDAT {unit}: "
+                f"{before:.2f} dB -> {after:.2f} dB"
+            )
+
+            if abs(after - db) > 0.001:
+                raise RuntimeError(
+                    f"Readback mismatch: requested {db:.2f}, "
+                    f"got {after:.2f}"
+                )
+
+        finally:
+            dev.close()
+
+        return 0
+
+    usage()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,53 @@
+#!/bin/bash
+
+set -e
+
+HUB_LINK="/dev/coolgear_hub"
+
+if [ ! -e "$HUB_LINK" ]; then
+    echo "Error: $HUB_LINK does not exist"
+    exit 1
+fi
+
+TTY_PATH=$(readlink -f "$HUB_LINK")
+TTY=$(basename "$TTY_PATH")
+
+usage() {
+    echo "Usage:"
+    echo "  mhub query"
+    echo "  mhub on <ports>"
+    echo "  mhub off <ports>"
+    echo
+    echo "Examples:"
+    echo "  mhub query"
+    echo "  mhub on 7"
+    echo "  mhub on 7,8"
+    echo "  mhub off 9,10"
+}
+
+case "$1" in
+    query|q)
+        exec cusba "/Q:$TTY"
+        ;;
+
+    on)
+        if [ -z "$2" ]; then
+            usage
+            exit 1
+        fi
+        exec cusba "/S:$TTY" "1:$2"
+        ;;
+
+    off)
+        if [ -z "$2" ]; then
+            usage
+            exit 1
+        fi
+        exec cusba "/S:$TTY" "0:$2"
+        ;;
+
+    *)
+        usage
+        exit 1
+        ;;
+esac
